@@ -39,7 +39,6 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug
       - name: Upload APK
-        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: Buddy-debug-apk
