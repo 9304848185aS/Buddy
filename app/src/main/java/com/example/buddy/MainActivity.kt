@@ -1,218 +1,244 @@
-
 package com.example.buddy
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
+import android.text.InputType
+import android.view.Gravity
+import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import java.util.Locale
+import android.widget.Toast
 
-class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
-
+class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var log: TextView
-    private lateinit var tts: TextToSpeech
-    private var recognizer: SpeechRecognizer? = null
-    private lateinit var actions: PhoneActions
-    private var stopRequested = false
+    private lateinit var endpointInput: EditText
+    private lateinit var modelInput: EditText
+    private lateinit var keyInput: EditText
+    private lateinit var memoryCheck: CheckBox
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        status = findViewById(R.id.status)
-        log = findViewById(R.id.log)
-        tts = TextToSpeech(this, this)
-        actions = PhoneActions(this)
-
-        // PermissionsActivity खोलने वाला नया कोड
-        if (!Settings.canDrawOverlays(this)) {
-            startActivity(
-                Intent(this, PermissionsActivity::class.java)
-            )
+        val prefs = getSharedPreferences("buddy_ai", MODE_PRIVATE)
+        fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+        fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
         }
-
-        findViewById<Button>(R.id.talk).setOnClickListener {
-            startListening()
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(24), dp(22), dp(28))
+            setBackgroundColor(Color.rgb(10, 17, 32))
         }
-
-        val listenBtn = findViewById<Button>(R.id.listen)
-
-        listenBtn.setOnClickListener {
-            if (BuddyListeningService.running) {
-                startService(
-                    Intent(this, BuddyListeningService::class.java)
-                        .setAction(BuddyListeningService.ACTION_STOP)
-                )
-                listenBtn.text = "हर वक्त सुनना चालू करो"
-            } else {
-                recognizer?.destroy()
-                recognizer = null
-
-                ContextCompat.startForegroundService(
-                    this,
-                    Intent(this, BuddyListeningService::class.java)
-                        .setAction(BuddyListeningService.ACTION_START)
-                )
-
-                listenBtn.text = "सुनना बंद करो"
-            }
+        fun label(value: String) = TextView(this).apply {
+            text = value
+            textSize = 15f
+            setPadding(0, 12, 0, 4)
         }
-
-        if (
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            val perms = mutableListOf(
-                Manifest.permission.RECORD_AUDIO
-            )
-
-            if (Build.VERSION.SDK_INT >= 33) {
-                perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        fun field(hintText: String, value: String, type: Int = InputType.TYPE_CLASS_TEXT) =
+            EditText(this).apply {
+                hint = hintText
+                setText(value)
+                textSize = 15f
+                inputType = type
+                setSingleLine(true)
             }
 
-            ActivityCompat.requestPermissions(
-                this,
-                perms.toTypedArray(),
-                1
-            )
+        content.addView(TextView(this).apply {
+            text = "BUDDY"
+            textSize = 34f
+            setTextColor(Color.rgb(111, 220, 255))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(10), 0, dp(4))
+        })
+        content.addView(TextView(this).apply {
+            text = "YOUR VOICE • YOUR CONTROL"
+            textSize = 11f
+            letterSpacing = 0.18f
+            setTextColor(Color.rgb(155, 177, 204))
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(18))
+        })
+        status = TextView(this).apply {
+            text = "Phone assistant ready. Start listening and speak a command."
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(14), dp(16), dp(14), dp(16))
+            background = rounded(Color.rgb(25, 39, 61), 16)
         }
-    }
+        content.addView(status)
+        content.addView(Button(this).apply {
+            text = "START LISTENING"
+            setOnClickListener { requestAndStart() }
+        })
+        content.addView(Button(this).apply {
+            text = "STOP"
+            setOnClickListener {
+                stopService(Intent(this@MainActivity, BuddyListeningService::class.java))
+                status.text = "Stopped"
+            }
+        })
 
-    override fun onInit(s: Int) {
-        if (s == TextToSpeech.SUCCESS) {
-            tts.language = Locale("hi", "IN")
+        content.addView(Button(this).apply {
+            text = "ENABLE SCREEN READING & TEXT TYPING"
+            setOnClickListener {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Android Accessibility settings will open. Enable Buddy only if you want on-demand screen reading and voice typing into the field you have focused.",
+                    Toast.LENGTH_LONG
+                ).show()
+                startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        })
+        content.addView(TextView(this).apply {
+            text = "Optional Accessibility access: when you explicitly ask Buddy what is on the screen, it reads visible text and descriptions from the current app. Password fields are skipped. It can also type into the text field you focused. It does not automatically send messages, submit forms, or make payments."
+            textSize = 13f
+            setPadding(0, 4, 0, 12)
+        })
+
+        content.addView(Button(this).apply {
+            text = "ENABLE NOTIFICATION READING"
+            setOnClickListener {
+                startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+        })
+        content.addView(TextView(this).apply {
+            text = "Optional: allow Buddy to read recent notification previews when you explicitly ask, for example: Buddy, who messaged me? Android may show private notification content. Previews stay in app memory and are not sent to the AI service."
+            textSize = 13f
+            setPadding(0, 4, 0, 12)
+        })
+
+        content.addView(label("AI BRAIN SETTINGS (OpenAI-compatible API)"))
+        content.addView(label("API endpoint"))
+        endpointInput = field("https://api.groq.com/openai/v1/chat/completions",
+            prefs.getString("endpoint", "https://api.groq.com/openai/v1/chat/completions").orEmpty())
+        content.addView(endpointInput)
+        content.addView(label("Model name"))
+        modelInput = field("Enter the model ID from your provider",
+            prefs.getString("model", "").orEmpty())
+        content.addView(modelInput)
+        content.addView(label("API key (encrypted with Android Keystore)"))
+        keyInput = field("Leave blank to keep the saved key",
+            "",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD).apply {
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+                setAutofillHints()
+            }
+        content.addView(keyInput)
+        content.addView(Button(this).apply {
+            text = "SAVE AI SETTINGS"
+            setOnClickListener {
+                val endpoint = endpointInput.text.toString().trim()
+                val model = modelInput.text.toString().trim()
+                val key = keyInput.text.toString().trim()
+                if (endpoint.isNotBlank() && !endpoint.startsWith("https://", ignoreCase = true)) {
+                    Toast.makeText(this@MainActivity, "Use a secure https:// endpoint.", Toast.LENGTH_LONG).show()
+                } else {
+                    if (key.isNotBlank() && !SecureKeyStore.set(this@MainActivity, key)) {
+                        Toast.makeText(this@MainActivity, "API key सुरक्षित रूप से save नहीं हुई। पुरानी settings नहीं बदलीं।", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    keyInput.text.clear()
+                    prefs.edit().putString("endpoint", endpoint)
+                        .putString("model", model)
+                        .remove("api_key")
+                        .putBoolean("memory_enabled", memoryCheck.isChecked).apply()
+                    if (!memoryCheck.isChecked) AiBrain.clearHistory(this@MainActivity)
+                    Toast.makeText(this@MainActivity, "AI settings saved on this phone.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
+
+        content.addView(Button(this).apply {
+            text = "CLEAR SAVED API KEY"
+            setOnClickListener {
+                SecureKeyStore.set(this@MainActivity, "")
+                keyInput.text.clear()
+                Toast.makeText(this@MainActivity, "Saved API key cleared from this app.", Toast.LENGTH_SHORT).show()
+            }
+        })
+        content.addView(label("OPTIONAL CONVERSATION MEMORY"))
+        memoryCheck = CheckBox(this).apply {
+            text = "Remember recent AI chat on this phone"
+            isChecked = prefs.getBoolean("memory_enabled", false)
         }
-    }
-
-    private fun say(text: String) {
-        log.append("Buddy: $text\n")
-        tts.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "buddy"
-        )
-    }
-
-    private fun startListening() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            say("इस फ़ोन में आवाज़ पहचानने की सुविधा नहीं मिली")
-            return
-        }
-
-        recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this)
-
-        recognizer?.setRecognitionListener(
-            object : RecognitionListener {
-                override fun onReadyForSpeech(p: Bundle?) {
-                    status.text = "सुन रहा हूँ..."
+        content.addView(memoryCheck)
+        content.addView(TextView(this).apply {
+            text = "Memory is OFF by default. If enabled, Buddy stores up to 5 recent exchanges locally on this phone and sends that context with your next AI question. Do not store passwords, payment details, or private information."
+            textSize = 13f
+            setPadding(0, 4, 0, 8)
+        })
+        content.addView(Button(this).apply {
+            text = "CLEAR AI CHAT MEMORY"
+            setOnClickListener {
+                AiBrain.clearHistory(this@MainActivity)
+                Toast.makeText(this@MainActivity, "Recent AI chat memory cleared.", Toast.LENGTH_SHORT).show()
+            }
+        })
+        content.addView(TextView(this).apply {
+            text = "AI chat requires internet and a provider API key. The key is encrypted with Android Keystore on this phone; free quotas vary. Never share your key or commit it to GitHub. Voice commands for opening apps, settings, alarms and web search work without an AI key. Memory preference is saved when you tap SAVE AI SETTINGS."
+            textSize = 13f
+            setPadding(0, 12, 0, 16)
+        })
+        // Apply a consistent high-contrast dark interface to every control.
+        for (index in 0 until content.childCount) {
+            when (val child = content.getChildAt(index)) {
+                is Button -> {
+                    child.background = rounded(Color.rgb(24, 111, 158), 13)
+                    child.setTextColor(Color.WHITE)
+                    child.textSize = 14f
+                    child.setPadding(dp(14), dp(13), dp(14), dp(13))
+                    child.isAllCaps = false
                 }
-
-                override fun onBeginningOfSpeech() {}
-
-                override fun onRmsChanged(v: Float) {}
-
-                override fun onBufferReceived(b: ByteArray?) {}
-
-                override fun onEndOfSpeech() {
-                    status.text = "समझ रहा हूँ..."
+                is EditText -> {
+                    child.setTextColor(Color.WHITE)
+                    child.setHintTextColor(Color.rgb(139, 157, 180))
                 }
-
-                override fun onError(e: Int) {
-                    status.text = "Buddy तैयार है"
-                    say("माफ़ कीजिए, मैं समझ नहीं पाया")
-                }
-
-                override fun onPartialResults(p: Bundle?) {}
-
-                override fun onEvent(t: Int, p: Bundle?) {}
-
-                override fun onResults(r: Bundle?) {
-                    status.text = "Buddy तैयार है"
-
-                    val text = r
-                        ?.getStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION
-                        )
-                        ?.firstOrNull()
-
-                    if (text != null) {
-                        log.append("आप: $text\n")
-                        handle(text)
+                is TextView -> {
+                    if (child !== status && child.textColors.defaultColor == Color.BLACK) {
+                        child.setTextColor(Color.rgb(218, 229, 243))
                     }
                 }
             }
-        )
-
-        val i = Intent(
-            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-        ).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE,
-                "hi-IN"
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_PREFER_OFFLINE,
-                true
-            )
         }
-
-        recognizer?.startListening(i)
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.rgb(10, 17, 32))
+            addView(content)
+        }
+        setContentView(scroll)
     }
 
-    private fun handle(text: String) {
-        val cmd = CommandParser.parse(text)
-
-        when (cmd) {
-            is Command.Stop -> {
-                stopRequested = true
-                say("ठीक है, रुक गया")
-            }
-
-            is Command.Alarm -> {
-                say(actions.setAlarm(cmd.hour, cmd.minute))
-            }
-
-            is Command.Timer -> {
-                say(actions.setTimer(cmd.seconds))
-            }
-
-            is Command.OpenApp -> {
-                say(actions.openApp(cmd.name))
-            }
-
-            is Command.Unknown -> {
-                say(
-                    "मुझे ये निर्देश समझ नहीं आया। " +
-                    "आप कह सकते हैं: सुबह 7 बजे का अलार्म लगा दो, " +
-                    "या 5 मिनट का टाइमर लगा दो, या व्हाट्सऐप खोलो"
-                )
-            }
-        }
+    private fun requestAndStart() {
+        val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        val missing = permissions.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 7)
+        else startBuddy()
     }
 
-    override fun onDestroy() {
-        recognizer?.destroy()
-        tts.shutdown()
-        super.onDestroy()
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, results)
+        if (requestCode == 7 && results.isNotEmpty() && results[0] == PackageManager.PERMISSION_GRANTED) startBuddy()
+        else Toast.makeText(this, "Microphone permission is needed to listen.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun startBuddy() {
+        try {
+            val i = Intent(this, BuddyListeningService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
+            status.text = "Listening — speak a command directly…"
+        } catch (_: Exception) {
+            status.text = "Could not start. Open Buddy and try again."
+        }
     }
 }

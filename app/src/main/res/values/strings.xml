@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Buddy</string>
+    <string name="buddy_accessibility_description">Allows Buddy to enter text only into the currently focused text field when you explicitly speak a type command. Buddy does not read screen contents or tap buttons.</string>
+</resources>
